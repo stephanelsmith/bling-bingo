@@ -1,4 +1,0 @@
-#define MICROPY_HW_BOARD_NAME               "BLING"
-#define MICROPY_HW_MCU_NAME                 "ESP32-S3-FN8"
-#define MICROPY_PY_NETWORK_HOSTNAME_DEFAULT "BLING"
-
