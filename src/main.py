@@ -2,6 +2,7 @@
 import asyncio
 import sys
 import gc
+import time
 from micropython import const
 import esp32
 import io
@@ -25,19 +26,21 @@ from mqtt.core import MQTTCore
 from lib.ntptime import settime as ntp_settime
 from lib.mytime import lcl_timetuple
 
-import clock
-from clock import clock_coro
-
 from display import LED_HUE_PUPLE
 from display import NEOPIXELS_LEN
 from display import NEOPIXELS_ROW
 from display import i_to_xy
 from display import hsv_to_rgb
+from display import write_text
+from display import make_palette
+from display import render
 
 
 # pins
 _NEOPIXELS_PWR = const(6)
 _NEOPIXELS_DAT = const(18)
+_FLASH_MS      = const(8000)  # how long a 'flash' lasts (website flashSeconds should match)
+_FLASH_HALF_MS = const(250)   # on/off period while flashing
 
 # 18
 # 1111:111111:111111
@@ -76,7 +79,7 @@ async def wdt_coro():
         wdt.feed()
         await asyncio.sleep_ms(2000)
 
-async def mqtt_coro(wifi):
+async def mqtt_coro(wifi, frmmsk, dispmode):
     rx_task = None
     retry_s = 1
     while True:
@@ -91,7 +94,9 @@ async def mqtt_coro(wifi):
                                     client_id = wifi.client_id,
                                     ) as mqtt:
                     await mqtt.subscribe(topics = [MQTT_ROOT+b'/#'])
-                    rx_task = asyncio.create_task(mqtt_rx_coro(rx_q = mqtt.mqtt_app_rx_q))
+                    rx_task = asyncio.create_task(mqtt_rx_coro(rx_q     = mqtt.mqtt_app_rx_q,
+                                                               frmmsk   = frmmsk,
+                                                               dispmode = dispmode))
                     retry_s = 1 # connected, reset the backoff
                     await WaitAny((
                         wifi.is_closed,
@@ -110,7 +115,7 @@ async def mqtt_coro(wifi):
         await asyncio.sleep(retry_s)
         retry_s = min(retry_s*2, 60)
 
-async def mqtt_rx_coro(rx_q):
+async def mqtt_rx_coro(rx_q, frmmsk, dispmode):
     part = esp32.Partition(esp32.Partition.RUNNING)
     part.mark_app_valid_cancel_rollback()
     ota_part = esp32.Partition(esp32.Partition.RUNNING).get_next_update()
@@ -120,7 +125,7 @@ async def mqtt_rx_coro(rx_q):
         try:
             r = await rx_q.get()
             if r:
-                # print('RX',r)
+                print('MQTT RX',r)
                 tlvls = r.topic.split(b'/')
                 if tlvls[1] == b'ota':
                     if tlvls[2] == b'done':
@@ -138,6 +143,17 @@ async def mqtt_rx_coro(rx_q):
                             ota_part.writeblocks(page, b)
                     except Exception as err:
                         sys.print_exception(err)
+                elif tlvls[1] == b'bingo':
+                    if tlvls[2] == b'call':
+                        print('CALL: {}'.format(r.payload))
+                        write_text(frmmsk = frmmsk,
+                                text   = r.payload)
+                    elif tlvls[2] == b'mode':
+                        print('MODE: {}'.format(r.payload))
+                        if r.payload == b'flash':
+                            dispmode['flash_until'] = time.ticks_add(time.ticks_ms(), _FLASH_MS)
+                        elif r.payload == b'rainbow':
+                            dispmode['flash_until'] = 0   # cancel a flash early
                 else:
                     print('Unkown message received',r)
         except asyncio.CancelledError:
@@ -178,27 +194,53 @@ async def ntp_coro():
     except Exception as err:
         sys.print_exception(err)
 
+_FRAME_MS = const(8)   # ~60 fps; neo.write() blocks ~10ms so don't go faster
+_HUE_MS   = const(10)   # ms per hue step (256 steps/cycle -> ~10s per rainbow cycle)
+
 # colorize and write to neopixel
-async def display_coro(frmmsk, neo):
+async def display_coro(frmmsk, neo, pal, dispmode):
+    acc = 0
+    last = time.ticks_ms()
+    try:
+        while True:
+            try:
+                await asyncio.sleep_ms(_FRAME_MS)
+                now = time.ticks_ms()
+                acc = (acc + time.ticks_diff(now, last)) % (256*_HUE_MS)
+                last = now
+                fu = dispmode['flash_until']
+                if fu and time.ticks_diff(fu, now) > 0:
+                    if (now//_FLASH_HALF_MS) & 1:
+                        neo.fill((0,0,0))  # dark half of the flash
+                    else:
+                        render(neo.buf, frmmsk, pal, acc//_HUE_MS)
+                else:
+                    dispmode['flash_until'] = 0
+                    render(neo.buf, frmmsk, pal, acc//_HUE_MS)
+                neo.write()
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                sys.print_exception(err)
+    except asyncio.CancelledError:
+        raise
+    except Exception as err:
+        sys.print_exception(err)
+
+# REFERENCE ONLY (slow): original per-pixel colorize, kept for comparison.
+# Not started anywhere; see display_coro below.
+async def display_coro_ref(frmmsk, neo):
     shift = 0
     speed = 1
     try:
         while True:
             try:
-                await asyncio.sleep_ms(3)
-                yr, mth, day, hr, min, sec, msec, = lcl_timetuple()
+                await asyncio.sleep_ms(1)
                 shift += speed
                 for i in range(NEOPIXELS_LEN):
                     x,y = i_to_xy(i)
-                    if clock.is_nighttime:  # set by clock_coro
-                        hue = LED_HUE_PUPLE
-                        val = 1
-                    elif board.CLOCK_MODE == board.CELESTE_MODE:
-                        hue = ((x-shift//20)*256)//NEOPIXELS_ROW
-                        val = 5
-                    elif board.CLOCK_MODE == board.CALLEN_MODE:
-                        hue = (min*60+sec)*360//(60*60)
-                        val = 5
+                    hue = ((x-shift//20)*256)//NEOPIXELS_ROW
+                    val = 10
                     val = val if frmmsk[i] else 0
                     neo[i] = hsv_to_rgb(hue, 255, val)
                 neo.write()
@@ -248,24 +290,31 @@ async def start():
         wdt_task = asyncio.create_task(wdt_coro())
         neo =NeoPixel(Pin(_NEOPIXELS_DAT), NEOPIXELS_LEN)
         framemask = bytearray(NEOPIXELS_LEN)
+        palette = make_palette(val=20)
+        dispmode = {'flash_until': 0}  # shared display state, set by mqtt 'bingo/mode'
 
         # for x in range(NEOPIXELS_LEN):
             # neo[x] = hsv_to_rgb(LED_HUE_RED, 255, 5)
         # neo[0] = hsv_to_rgb(LED_HUE_BLUE, 255, 5)
         # neo[1] = hsv_to_rgb(LED_HUE_GREEN, 255, 5)
+        write_text(frmmsk = framemask,
+                   text   = b'BINGO')
         # neo.write()
 
         repl_task = asyncio.create_task(repl_coro())
-        clock_task = asyncio.create_task(clock_coro(frmmsk = framemask))
         display_task = asyncio.create_task(display_coro(frmmsk = framemask,
-                                                        neo = neo))
+                                                        neo = neo,
+                                                        pal = palette,
+                                                        dispmode = dispmode))
 
         while True:
             try:
                 async with Wifi(addr = b'{}'.format(board.ADDR),
                                 ) as wifi:
                     ntp_task = asyncio.create_task(ntp_coro())
-                    mqtt_task = asyncio.create_task(mqtt_coro(wifi = wifi))
+                    mqtt_task = asyncio.create_task(mqtt_coro(wifi     = wifi,
+                                                              frmmsk   = framemask,
+                                                              dispmode = dispmode))
                     await Event().wait()
             except Exception as err:
                 sys.print_exception(err)
@@ -282,7 +331,6 @@ async def start():
     finally:
         led_pwr.value(0)
         repl_task.cancel()
-        clock_task.cancel()
         display_task.cancel()
         gc.collect()
         gc_task.cancel()

@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Bingo Caller's Storybook</title>
+<meta name="description" content="Call the numbers and send them to the bingo board.">
+<meta name="theme-color" content="#2f5d50">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --desk:      #5b3f2c;
+    --desk-2:    #3f2a1c;
+    --paper:     #fbf3df;
+    --paper-2:   #f1e4c3;
+    --ink:       #3b2a1e;
+    --ink-soft:  #6f5a48;
+    --line:      #d9c79c;
+    --burgundy:  #8c2f39;
+    --forest:    #2f5d50;
+    --gold:      #c9962b;
+    --gold-hi:   #f2cf73;
+    --slate:     #3f5f86;
+    --plum:      #6b3f7a;
+    --ok:        #3f8f5f;
+    --warn:      #d19a2a;
+    --bad:       #b3402f;
+    --lantern:   #15110e;
+    --shadow:    rgba(30, 15, 5, .35);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  }
+  /* night-time library */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --desk: #1a120c; --desk-2: #0e0905;
+      --paper: #2b241c; --paper-2: #231d16;
+      --ink: #f1e3c6; --ink-soft: #bba98c; --line: #4a3e2e;
+      --burgundy: #c24c58; --forest: #4f9a85; --gold: #e0ae44; --gold-hi: #ffe39a;
+      --slate: #6b93c4; --plum: #a874bb; --shadow: rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --desk: #1a120c; --desk-2: #0e0905;
+    --paper: #2b241c; --paper-2: #231d16;
+    --ink: #f1e3c6; --ink-soft: #bba98c; --line: #4a3e2e;
+    --burgundy: #c24c58; --forest: #4f9a85; --gold: #e0ae44; --gold-hi: #ffe39a;
+    --slate: #6b93c4; --plum: #a874bb; --shadow: rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font-family: var(--serif);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(255, 220, 150, .18), transparent 60%),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 2px, transparent 2px 9px),
+      linear-gradient(180deg, var(--desk), var(--desk-2));
+    background-color: var(--desk);
+    padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  header { text-align: center; color: #fbf3df; padding: 6px 0 14px; position: relative; }
+  header h1 {
+    margin: 0;
+    font-size: clamp(1.45rem, 4.6vw, 2.3rem);
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-shadow: 0 2px 0 rgba(0,0,0,.35);
+  }
+  header h1 .amp { color: var(--gold-hi); font-style: italic; }
+  header p { margin: 2px 0 0; font-style: italic; opacity: .85; font-size: clamp(.95rem, 2.8vw, 1.1rem); }
+
+  /* ── the bookmark ribbon (connection) ─────────────────────────── */
+  .ribbon {
+    position: absolute; top: -14px; right: 4px;
+    width: 64px; padding: 20px 6px 24px;
+    background: var(--warn); color: #2b1d08;
+    font-size: .68rem; font-weight: 700; line-height: 1.15; text-align: center;
+    letter-spacing: .02em;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%);
+    box-shadow: 0 6px 10px var(--shadow);
+    transition: background .4s, color .4s;
+  }
+  .ribbon[data-state="open"]  { background: var(--ok);  color: #f4fff6; }
+  .ribbon[data-state="lost"]  { background: var(--bad); color: #fff4f0; }
+  .ribbon[data-state="open"] .dot { animation: none; }
+  .dot { display: block; width: 10px; height: 10px; margin: 0 auto 4px; border-radius: 50%;
+         background: currentColor; animation: blink 1.1s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  @media (max-width: 560px) {
+    header { padding-right: 56px; padding-left: 8px; text-align: left; }
+    .ribbon { right: -6px; width: 56px; }
+  }
+
+  /* ── the open book ────────────────────────────────────────────── */
+  .book {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow:
+      0 0 0 6px #6d2d33, 0 0 0 8px #4c1d22,
+      0 22px 40px var(--shadow);
+  }
+  .page { position: relative; padding: clamp(16px, 4vw, 30px); }
+  .page + .page { border-top: 2px dashed var(--line); }
+  .page::before { /* faint paper grain */
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(600px 300px at 20% 0%, rgba(255,255,255,.35), transparent 70%);
+    mix-blend-mode: soft-light;
+  }
+  @media (min-width: 860px) {
+    .book { grid-template-columns: 1fr 1fr; }
+    .page + .page { border-top: 0; }
+    .book::after { /* spine */
+      content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 46px; transform: translateX(-50%);
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(60,30,10,.22) 45%, rgba(60,30,10,.34) 50%, rgba(60,30,10,.22) 55%, transparent);
+    }
+    .page:first-child { padding-right: 44px; border-radius: 14px 0 0 14px; }
+    .page:last-child  { padding-left: 44px;  border-radius: 0 14px 14px 0; }
+  }
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: 1.15rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--burgundy);
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2::after { content: ""; flex: 1; height: 2px; background: linear-gradient(90deg, var(--line), transparent); }
+
+  /* ── magic lantern (live preview of the board) ───────────────── */
+  .lantern {
+    background: var(--lantern);
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: inset 0 0 0 2px #000, inset 0 0 22px rgba(0,0,0,.8), 0 0 0 3px var(--gold), 0 0 0 5px #7a5a14;
+  }
+  .lantern canvas { display: block; width: 100%; aspect-ratio: 5 / 1; }
+  .lantern-cap { margin: 8px 2px 0; text-align: center; font-style: italic; font-size: .85rem; color: var(--ink-soft); }
+
+  /* ── input ───────────────────────────────────────────────────── */
+  label.field { display: block; margin: 18px 0 6px; font-style: italic; color: var(--ink-soft); }
+  .inputrow { position: relative; }
+  #call {
+    width: 100%;
+    font: 700 clamp(2rem, 9vw, 3rem)/1.1 var(--serif);
+    letter-spacing: .28em; text-align: center; text-transform: uppercase;
+    padding: 12px 8px 12px calc(8px + .28em);
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 3px solid var(--ink);
+    border-radius: 10px;
+    outline: none;
+    box-shadow: inset 0 3px 0 rgba(0,0,0,.07);
+  }
+  #call:focus { border-color: var(--burgundy); box-shadow: 0 0 0 4px rgba(140,47,57,.25); }
+  #call::placeholder { color: var(--line); letter-spacing: .1em; font-weight: 400; font-style: italic; }
+  .count { position: absolute; right: 10px; bottom: 6px; font-size: .75rem; color: var(--ink-soft); pointer-events: none; }
+
+  .actions { margin-top: 16px; }
+  .actions .btn { width: 100%; }
+
+  button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+  .btn {
+    min-height: 56px; padding: 10px 18px;
+    border-radius: 12px; border: 3px solid var(--ink);
+    font-weight: 700; font-size: 1.15rem; letter-spacing: .04em;
+    color: var(--ink); background: var(--paper-2);
+    box-shadow: 0 5px 0 var(--ink);
+    transition: transform .08s, box-shadow .08s, filter .2s;
+  }
+  .btn:hover { filter: brightness(1.05); }
+  .btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+
+  .btn.bingo {
+    font-size: clamp(1.5rem, 6vw, 2rem); letter-spacing: .14em;
+    min-height: 68px;
+    color: #3a2506; border-color: #5b3d06; box-shadow: 0 6px 0 #5b3d06;
+    background: linear-gradient(180deg, var(--gold-hi), var(--gold) 55%, #a8761a);
+    text-shadow: 0 1px 0 rgba(255,255,255,.5);
+  }
+  .btn.bingo:active:not(:disabled) { box-shadow: 0 1px 0 #5b3d06; transform: translateY(5px); }
+
+  /* ── the numbers ─────────────────────────────────────────────── */
+  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; }
+  .tab {
+    aspect-ratio: 1; max-height: 74px; width: 100%;
+    border-radius: 50%;
+    border: 3px solid var(--ink);
+    font: 700 clamp(1.4rem, 6vw, 2rem)/1 var(--serif);
+    color: #fff8ea; text-shadow: 0 1px 0 rgba(0,0,0,.35);
+    background: var(--c);
+    box-shadow: 0 4px 0 rgba(0,0,0,.35), inset 0 -6px 10px rgba(0,0,0,.2), inset 0 6px 10px rgba(255,255,255,.18);
+    opacity: .72; transform: scale(.92);
+    transition: transform .15s, opacity .15s;
+  }
+  .tab[aria-selected="true"] { opacity: 1; transform: scale(1.04); box-shadow: 0 0 0 4px var(--gold), 0 4px 0 rgba(0,0,0,.35); }
+  .tab[data-l="B"] { --c: var(--burgundy); }
+  .tab[data-l="I"] { --c: var(--forest); }
+  .tab[data-l="N"] { --c: #a47719; }
+  .tab[data-l="G"] { --c: var(--slate); }
+  .tab[data-l="O"] { --c: var(--plum); }
+
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .num {
+    min-height: 54px; border-radius: 10px;
+    border: 2px solid var(--line);
+    background: var(--paper-2); color: var(--ink);
+    font: 700 1.35rem/1 var(--serif);
+    box-shadow: 0 3px 0 var(--line);
+    transition: transform .08s, background .15s;
+  }
+  .num:hover { background: var(--paper); border-color: var(--gold); }
+  .num:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+  .num[aria-pressed="true"] { background: var(--gold-hi); color: #3a2506; border-color: var(--gold); box-shadow: 0 3px 0 var(--gold); }
+  .hint { margin: 14px 0 0; font-style: italic; color: var(--ink-soft); font-size: .92rem; }
+
+  /* ── toast / scroll ──────────────────────────────────────────── */
+  #toast {
+    position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
+    transform: translate(-50%, 220%); opacity: 0;
+    max-width: min(92vw, 460px);
+    padding: 12px 22px;
+    background: #f6e7bd; color: #3b2a1e;
+    border: 3px solid #5b3d06; border-radius: 8px 22px 8px 22px;
+    font-weight: 700; text-align: center;
+    box-shadow: 0 10px 24px rgba(0,0,0,.45);
+    transition: transform .35s cubic-bezier(.2, 1.4, .4, 1), opacity .2s;
+    z-index: 30; pointer-events: none;
+  }
+  #toast.show { transform: translate(-50%, 0); opacity: 1; }
+  #toast.err { background: #f3c9bf; border-color: #7e2417; }
+
+  #confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+
+  footer { text-align: center; margin-top: 16px; color: #e9d8b3; opacity: .7; font-size: .8rem; font-style: italic; }
+  footer code { font-style: normal; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>The Bingo Caller's <span class="amp">Storybook</span></h1>
+    <p>Once upon a call&hellip;</p>
+    <div class="ribbon" id="ribbon" data-state="wait" role="status" aria-live="polite">
+      <span class="dot"></span><span id="ribbonText">Finding the library</span>
+    </div>
+  </header>
+
+  <main class="book">
+
+    <!-- left page: the call -->
+    <section class="page" aria-labelledby="h-call">
+      <h2 id="h-call">The Call</h2>
+
+      <div class="lantern">
+        <canvas id="lantern" aria-hidden="true"></canvas>
+      </div>
+      <div class="lantern-cap">&#10022; the magic lantern &mdash; just as it will glow on the board &#10022;</div>
+
+      <label class="field" for="call">Type anything &mdash; it appears on the board as you write <span style="opacity:.8">(up to 5 characters; empty the box to clear)</span></label>
+      <div class="inputrow">
+        <input id="call" type="text" inputmode="text" enterkeyhint="send"
+               autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
+               maxlength="5" placeholder="B 7">
+        <span class="count" id="count">0/5</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn bingo" id="bingo" type="button">BINGO!</button>
+      </div>
+    </section>
+
+    <!-- right page: the numbers -->
+    <section class="page" aria-labelledby="h-nums">
+      <h2 id="h-nums">The Numbers</h2>
+      <div class="tabs" role="tablist" aria-label="Letter" id="tabs"></div>
+      <div class="grid" id="grid" role="group" aria-label="Numbers"></div>
+      <p class="hint">Tap a number and it goes straight to the board. Or type anything you like on the left &mdash; the board follows along. Empty the box to clear it.</p>
+    </section>
+
+  </main>
+
+  <footer>Sending to <code id="topicNote"></code></footer>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script src="assets/mqtt.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ── settings ─────────────────────────────────────────────────────────────
+  const CONFIG = {
+    broker:       'wss://broker.hivemq.com:8884/mqtt', // HiveMQ public broker, MQTT over WebSockets
+    root:         'kx5x',                               // must match MQTT_ROOT in the firmware
+    maxChars:     5,
+    flashSeconds: 8,                                    // keep in sync with firmware flash duration
+  };
+  // Testing helper: index.html?root=test publishes to test/bingo/... instead
+  try {
+    const r = new URLSearchParams(location.search).get('root');
+    if (r && /^[\w\-\/]+$/.test(r)) CONFIG.root = r;
+  } catch (_) {}
+  const T_CALL = CONFIG.root + '/bingo/call';  // payload: up to 5 chars (retained)
+  const T_MODE = CONFIG.root + '/bingo/mode';  // payload: 'flash' | 'rainbow' | 'solid' (not retained)
+
+  // ── the board's font (copied from src/font.py; ASCII 32..126, 8 columns/char, bit0 = top row)
+  const FONT = [
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,79,79,0,0,0],
+    [0,7,7,0,0,7,7,0],
+    [20,127,127,20,20,127,127,20],
+    [0,36,46,107,107,58,18,0],
+    [0,99,51,24,12,102,99,0],
+    [0,50,127,77,77,119,114,80],
+    [0,0,0,4,6,3,1,0],
+    [0,0,28,62,99,65,0,0],
+    [0,0,65,99,62,28,0,0],
+    [8,42,62,28,28,62,42,8],
+    [0,8,8,62,62,8,8,0],
+    [0,0,128,224,96,0,0,0],
+    [0,8,8,8,8,8,8,0],
+    [0,0,0,96,96,0,0,0],
+    [0,64,96,48,24,12,6,2],
+    [0,62,127,73,69,127,62,0],
+    [0,64,68,127,127,64,64,0],
+    [0,98,115,81,73,79,70,0],
+    [0,34,99,73,73,127,54,0],
+    [0,24,24,20,22,127,127,16],
+    [0,39,103,69,69,125,57,0],
+    [0,62,127,73,73,123,50,0],
+    [0,3,3,121,125,7,3,0],
+    [0,54,127,73,73,127,54,0],
+    [0,38,111,73,73,127,62,0],
+    [0,0,0,36,36,0,0,0],
+    [0,0,128,228,100,0,0,0],
+    [0,8,28,54,99,65,65,0],
+    [0,20,20,20,20,20,20,0],
+    [0,65,65,99,54,28,8,0],
+    [0,2,3,81,89,15,6,0],
+    [0,62,127,65,77,79,46,0],
+    [0,124,126,11,11,126,124,0],
+    [0,127,127,73,73,127,54,0],
+    [0,62,127,65,65,99,34,0],
+    [0,127,127,65,99,62,28,0],
+    [0,127,127,73,73,65,65,0],
+    [0,127,127,9,9,1,1,0],
+    [0,62,127,65,73,123,58,0],
+    [0,127,127,8,8,127,127,0],
+    [0,0,65,127,127,65,0,0],
+    [0,32,96,65,127,63,1,0],
+    [0,127,127,28,54,99,65,0],
+    [0,127,127,64,64,64,64,0],
+    [0,127,127,6,12,6,127,127],
+    [0,127,127,14,28,127,127,0],
+    [0,62,127,65,65,127,62,0],
+    [0,127,127,9,9,15,6,0],
+    [0,30,63,33,97,127,94,0],
+    [0,127,127,25,57,111,70,0],
+    [0,38,111,73,73,123,50,0],
+    [0,1,1,127,127,1,1,0],
+    [0,63,127,64,64,127,63,0],
+    [0,31,63,96,96,63,31,0],
+    [0,127,127,48,24,48,127,127],
+    [0,99,119,28,28,119,99,0],
+    [0,7,15,120,120,15,7,0],
+    [0,97,113,89,77,71,67,0],
+    [0,0,127,127,65,65,0,0],
+    [0,2,6,12,24,48,96,64],
+    [0,0,65,65,127,127,0,0],
+    [0,8,12,6,6,12,8,0],
+    [192,192,192,192,192,192,192,192],
+    [0,0,1,3,6,4,0,0],
+    [0,32,116,84,84,124,120,0],
+    [0,127,127,68,68,124,56,0],
+    [0,56,124,68,68,108,40,0],
+    [0,56,124,68,68,127,127,0],
+    [0,56,124,84,84,92,88,0],
+    [0,8,126,127,9,3,2,0],
+    [0,152,188,164,164,252,124,0],
+    [0,127,127,4,4,124,120,0],
+    [0,0,0,125,125,0,0,0],
+    [0,64,192,128,128,253,125,0],
+    [0,127,127,48,56,108,68,0],
+    [0,0,65,127,127,64,0,0],
+    [0,124,124,24,48,24,124,124],
+    [0,124,124,4,4,124,120,0],
+    [0,56,124,68,68,124,56,0],
+    [0,252,252,36,36,60,24,0],
+    [0,24,60,36,36,252,252,0],
+    [0,124,124,4,4,12,8,0],
+    [0,72,92,84,84,116,32,0],
+    [4,4,63,127,68,100,32,0],
+    [0,60,124,64,64,124,60,0],
+    [0,28,60,96,96,60,28,0],
+    [0,28,124,48,24,48,124,28],
+    [0,68,108,56,56,108,68,0],
+    [0,156,188,160,160,252,124,0],
+    [0,68,100,116,92,76,68,0],
+    [0,8,8,62,119,65,65,0],
+    [0,0,0,255,255,0,0,0],
+    [0,65,65,119,62,8,8,0],
+    [0,2,3,1,3,2,3,1]
+  ];
+
+  const $ = id => document.getElementById(id);
+  const input = $('call'), bingoBtn = $('bingo');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('topicNote').textContent = T_CALL;
+
+  // ── connection ───────────────────────────────────────────────────────────
+  let client = null, connected = false;
+  const ribbon = $('ribbon'), ribbonText = $('ribbonText');
+  function setStatus(state, text) {
+    ribbon.dataset.state = state; ribbonText.textContent = text;
+    connected = state === 'open';
+  }
+  function connect() {
+    if (typeof mqtt === 'undefined') { setStatus('lost', 'Library missing'); return; }
+    const clientId = 'bingo-caller-' + Math.random().toString(16).slice(2, 10);
+    client = mqtt.connect(CONFIG.broker, { clientId, clean: true, keepalive: 30, reconnectPeriod: 2000, connectTimeout: 8000 });
+    client.on('connect',   () => setStatus('open', 'Open for business'));
+    client.on('reconnect', () => setStatus('wait', 'Finding the library'));
+    client.on('offline',   () => setStatus('lost', 'Lost the thread'));
+    client.on('close',     () => setStatus('lost', 'Lost the thread'));
+    client.on('error',     () => setStatus('lost', 'Lost the thread'));
+  }
+  function publish(topic, payload, retain) {
+    return new Promise((resolve, reject) => {
+      if (!client || !connected) return reject(new Error('offline'));
+      client.publish(topic, payload, { qos: 1, retain }, err => err ? reject(err) : resolve());
+    });
+  }
+
+  // ── toast ────────────────────────────────────────────────────────────────
+  let toastTimer = 0;
+  function toast(msg, isErr, ms) {
+    const t = $('toast'); t.textContent = msg; t.classList.toggle('err', !!isErr); t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms || 2400);
+  }
+
+  // ── input handling ───────────────────────────────────────────────────────
+  function clean(s) {
+    return s.toUpperCase().replace(/[^\x20-\x7e]/g, '').slice(0, CONFIG.maxChars);
+  }
+  function refreshButtons() {
+    $('count').textContent = input.value.length + '/' + CONFIG.maxChars;
+  }
+  function onInput() {
+    const v = clean(input.value);
+    if (v !== input.value) input.value = v;
+    syncGrid(true);
+    refreshButtons();
+  }
+  input.addEventListener('input', () => { onInput(); sendSoon(); });
+  input.addEventListener('focus', () => setTimeout(() => input.select(), 0));
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendNow(true); } });
+
+  // ── sending: every change goes straight to the board ────────────────────
+  const TYPE_DEBOUNCE_MS = 120;   // typing: wait for a brief pause; number taps send immediately
+  let lastSent = null, typeTimer = 0;
+  function failToast(e) {
+    toast(e && e.message === 'offline'
+      ? 'Not connected yet \u2014 one moment, then try again'
+      : 'Hmm, that didn\u2019t go through. Try again?', true);
+  }
+  async function sendNow(force) {
+    clearTimeout(typeTimer);
+    // an empty box clears the board (a single space; empty payloads can get dropped)
+    const text = input.value.trim() === '' ? ' ' : input.value;
+    if (!force && text === lastSent) return;
+    try {
+      await publish(T_CALL, text, true);
+      lastSent = text;
+      toast(text === ' ' ? 'Page cleared' : 'Sent: ' + text.trim(), false, 1100);
+    } catch (e) { failToast(e); }
+  }
+  function sendSoon() { clearTimeout(typeTimer); typeTimer = setTimeout(() => sendNow(false), TYPE_DEBOUNCE_MS); }
+  async function doBingo() {
+    clearTimeout(typeTimer);
+    input.value = 'BINGO'; onInput();
+    // celebrate right away; don't wait for the broker's acknowledgement
+    flashUntil = performance.now() + CONFIG.flashSeconds * 1000;
+    toast('BINGO! \u2726 Huzzah!'); confetti();
+    try {
+      await publish(T_CALL, 'BINGO', true);
+      lastSent = 'BINGO';
+      await publish(T_MODE, 'flash', false);   // not retained: don't re-flash on reconnect
+    } catch (e) { failToast(e); }
+  }
+  bingoBtn.addEventListener('click', doBingo);
+
+  // ── number grid ──────────────────────────────────────────────────────────
+  const LETTERS = ['B', 'I', 'N', 'G', 'O'];
+  let letter = 'B';
+  const tabs = $('tabs'), grid = $('grid');
+  LETTERS.forEach(l => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'tab'; b.dataset.l = l; b.textContent = l;
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-label', 'Letter ' + l);
+    b.addEventListener('click', () => { letter = l; renderGrid(); });
+    tabs.appendChild(b);
+  });
+  function renderGrid() {
+    const base = LETTERS.indexOf(letter) * 15;
+    [...tabs.children].forEach(t => t.setAttribute('aria-selected', t.dataset.l === letter));
+    grid.textContent = '';
+    for (let n = base + 1; n <= base + 15; n++) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'num'; b.textContent = n; b.dataset.n = n;
+      b.setAttribute('aria-label', letter + ' ' + n);
+      b.addEventListener('click', () => { input.value = letter + n; onInput(); sendNow(true); });
+      grid.appendChild(b);
+    }
+    syncGrid(false);
+  }
+  function syncGrid(followLetter) {
+    const m = /^([BINGO])\s?(\d{1,2})$/.exec(input.value.trim());
+    let want = null;
+    if (m) {
+      const n = +m[2], idx = Math.floor((n - 1) / 15);
+      if (n >= 1 && n <= 75 && LETTERS[idx] === m[1]) want = n;
+      if (want && followLetter && letter !== m[1]) { letter = m[1]; renderGrid(); return; }
+    }
+    [...grid.children].forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.n === want)));
+  }
+
+  // ── the magic lantern: 40x8 LED preview, same layout/colours logic as the board ─
+  const COLS = 40, ROWS = 8;
+  const cv = $('lantern'), cx = cv.getContext('2d');
+  let flashUntil = 0, W = 0, H = 0, dpr = 1;
+  function size() {
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    W = cv.clientWidth; H = W / 5;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
+  function columns(text) {
+    const t = text.trim().slice(0, CONFIG.maxChars);       // board centres the trimmed text
+    const cols = new Array(COLS).fill(0);
+    const off = Math.floor((COLS - t.length * 8) / 2);
+    for (let i = 0; i < t.length; i++) {
+      const g = FONT[t.charCodeAt(i) - 32] || FONT[0];
+      for (let x = 0; x < 8; x++) cols[off + i * 8 + x] = g[x];
+    }
+    return cols;
+  }
+  function draw(now) {
+    if (!W) size();
+    const cols = columns(input.value);
+    const cell = W / COLS;
+    const flashing = now < flashUntil, flashOn = Math.floor(now / 250) % 2 === 0;
+    const hueOff = reduceMotion ? 0 : (now / 40) % 256;      // 1 hue step per 40 ms, like the board
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx.clearRect(0, 0, W, H);
+    for (let x = 0; x < COLS; x++) {
+      const hue = ((((x * 256 / COLS) - hueOff) % 256) + 256) % 256 * 360 / 256;
+      const col = cols[x] || 0;
+      for (let y = 0; y < ROWS; y++) {
+        const lit = ((col >> y) & 1) && (!flashing || flashOn);
+        const cxp = (x + .5) * cell, cyp = (y + .5) * cell;
+        cx.beginPath(); cx.arc(cxp, cyp, cell * .36, 0, 6.2832);
+        if (lit) {
+          const c = 'hsl(' + hue.toFixed(0) + ' 100% 58%)';
+          cx.shadowColor = c; cx.shadowBlur = cell * .9; cx.fillStyle = c;
+        } else {
+          cx.shadowBlur = 0; cx.fillStyle = 'rgba(255, 238, 200, .075)';
+        }
+        cx.fill();
+      }
+    }
+    cx.shadowBlur = 0;
+  }
+  function loop(now) { draw(now); if (!reduceMotion || performance.now() < flashUntil) requestAnimationFrame(loop); else setTimeout(() => requestAnimationFrame(loop), 250); }
+  addEventListener('resize', () => { size(); });
+
+  // ── confetti: cannons + a long shower of paper bits, stars, streamers and tiny books ──
+  const cc = $('confetti'), cctx = cc.getContext('2d');
+  const COLORS = ['#c24c58', '#4f9a85', '#e0ae44', '#6b93c4', '#a874bb', '#f2cf73', '#fbf3df', '#ff7aa2', '#7fd4c1'];
+  let bits = [], raf = 0, rainUntil = 0;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function spawn(x, y, vx, vy, extra) {
+    bits.push(Object.assign({
+      x, y, vx, vy, r: rnd(0, 6.28), vr: rnd(-.25, .25), s: rnd(7, 16),
+      c: COLORS[(Math.random() * COLORS.length) | 0], k: (Math.random() * 5) | 0,
+      life: 0, max: rnd(200, 360), w: rnd(0, 6.28)
+    }, extra));
+  }
+  function cannon(ox, oy, dir, count) {
+    for (let i = 0; i < count; i++) {
+      const a = (-Math.PI / 2) + dir * rnd(.15, 1.0);
+      const sp = rnd(10, 26);
+      spawn(ox, oy, Math.cos(a) * sp, Math.sin(a) * sp);
+    }
+  }
+  function confetti() {
+    if (reduceMotion) return;
+    const dp = Math.min(window.devicePixelRatio || 1, 2);
+    cc.width = innerWidth * dp; cc.height = innerHeight * dp;
+    cctx.setTransform(dp, 0, 0, dp, 0, 0);
+    const W_ = innerWidth, H_ = innerHeight, big = W_ > 700 ? 1 : .6;
+    const wave = () => {
+      cannon(W_ * .04, H_ * .85,  1, 160 * big);
+      cannon(W_ * .96, H_ * .85, -1, 160 * big);
+      cannon(W_ * .50, H_ * .95,  0, 140 * big);
+    };
+    wave();
+    setTimeout(wave, 350); setTimeout(wave, 800); setTimeout(wave, 1400);
+    rainUntil = performance.now() + 3500;                   // then a shower from the top
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function star(c, s) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) { const r = i % 2 ? s * .42 : s, a = i * Math.PI / 5 - Math.PI / 2; c.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    c.closePath(); c.fill();
+  }
+  function tick(now) {
+    if (now < rainUntil) {
+      for (let i = 0; i < 9; i++) spawn(rnd(0, innerWidth), -20, rnd(-1.5, 1.5), rnd(1, 5), { max: rnd(260, 400) });
+    }
+    cctx.clearRect(0, 0, innerWidth, innerHeight);
+    bits = bits.filter(b => b.life < b.max && b.y < innerHeight + 40);
+    for (const b of bits) {
+      b.life++; b.vy += .3; b.vx *= .985; b.vy *= .99;
+      b.w += .12; b.x += b.vx + Math.sin(b.w) * .8; b.y += b.vy; b.r += b.vr;   // flutter on the way down
+      cctx.save(); cctx.translate(b.x, b.y); cctx.rotate(b.r); cctx.fillStyle = b.c;
+      cctx.globalAlpha = Math.min(1, (b.max - b.life) / 45);
+      const flip = Math.cos(b.w * 1.7);                        // fake 3D tumble
+      if (b.k === 0) { cctx.scale(1, flip); cctx.fillRect(-b.s / 2, -b.s / 3, b.s, b.s * .66); }
+      else if (b.k === 1) star(cctx, b.s * .8);
+      else if (b.k === 2) { cctx.beginPath(); cctx.arc(0, 0, b.s / 2.4, 0, 6.2832); cctx.fill(); }
+      else if (b.k === 3) { cctx.scale(flip, 1); cctx.fillRect(-b.s * .12, -b.s * 1.1, b.s * .24, b.s * 2.2); }   // streamer
+      else { cctx.fillRect(-b.s * .5, -b.s * .4, b.s, b.s * .8);                                             // tiny book
+             cctx.fillStyle = 'rgba(0,0,0,.35)'; cctx.fillRect(-b.s * .06, -b.s * .4, b.s * .12, b.s * .8); }
+      cctx.restore();
+    }
+    if (bits.length || now < rainUntil) raf = requestAnimationFrame(tick);
+    else { raf = 0; cctx.clearRect(0, 0, innerWidth, innerHeight); }
+  }
+
+  // ── go ───────────────────────────────────────────────────────────────────
+  renderGrid();
+  onInput();
+  size();
+  requestAnimationFrame(loop);
+  connect();
+})();
+</script>
+</body>
+</html>
