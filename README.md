@@ -1,5 +1,7 @@
 #  A Bingo Screen Based On the UM Bling kit
 
+[Bingo Page!](https://stephanelsmith.github.io/bling-bingo/)
+
 ## :horse_racing: **Start here!**
 ### Build instructions
 * [Bling](docs/s3/README.md), ESP32S3 build isntructions on the Bling (ESP32-S3).
